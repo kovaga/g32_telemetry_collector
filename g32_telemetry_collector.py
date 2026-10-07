@@ -1075,6 +1075,17 @@ def dispatch_event(
     output_event(event, args)
 
 
+class SelfTestError(Exception):
+    """Raised when --self-test finds a decoding regression."""
+
+
+def self_check(condition: bool, description: str) -> None:
+    """Replacement for assert that still runs under python -O."""
+
+    if not condition:
+        raise SelfTestError(f"self-test failed: {description}")
+
+
 def run_self_test(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
     frame = bytes.fromhex(
         "a33a84e0422c0214020a020a020a9600960096009600285300000d010405bb"
@@ -1090,21 +1101,21 @@ def run_self_test(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
 
     ethernet = parse_tzsp(tzsp)
     packet = parse_inner_tcp(ethernet)
-    assert packet is not None
-    assert packet.src_ip == "192.168.6.117"
-    assert packet.dst_ip == "3.120.177.98"
-    assert packet.dst_port == 4501
-    assert packet.payload == frame
+    self_check(packet is not None, 'packet is not None')
+    self_check(packet.src_ip == "192.168.6.117", 'packet.src_ip == "192.168.6.117"')
+    self_check(packet.dst_ip == "3.120.177.98", 'packet.dst_ip == "3.120.177.98"')
+    self_check(packet.dst_port == 4501, 'packet.dst_port == 4501')
+    self_check(packet.payload == frame, 'packet.payload == frame')
 
     # Also verify that a frame split over two TCP segments is reconstructed.
     stream = TCPStream()
     part1 = TCPPacket(packet.src_ip, packet.dst_ip, packet.src_port, packet.dst_port, 1000, 0, frame[:17])
     part2 = TCPPacket(packet.src_ip, packet.dst_ip, packet.src_port, packet.dst_port, 1017, 0, frame[17:])
     stream.append(part1)
-    assert not pull_g32_frames(stream.buffer, args.device_id)
+    self_check(not pull_g32_frames(stream.buffer, args.device_id), 'not pull_g32_frames(stream.buffer, args.device_id)')
     stream.append(part2)
     extracted = pull_g32_frames(stream.buffer, args.device_id)
-    assert extracted == [frame]
+    self_check(extracted == [frame], 'extracted == [frame]')
 
     decoded = decode_g32_frame(
         extracted[0],
@@ -1113,17 +1124,17 @@ def run_self_test(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
         include_raw=args.rawframe,
         include_unknown=args.verbose,
     )
-    assert decoded["temperatures_c"]["zone_1"] == 22.0
-    assert decoded["gas"]["weight_kg"] == 10.323
-    assert decoded["gas"]["level_percent"] == 93
-    assert decoded["gas"]["capacity_kg"] == 11.0
-    assert decoded["status"] == "online"
-    assert decoded["hood_light_sensitivity_percent"] == 24
-    assert decoded["probable_tank_installed_utc"] == "2026-08-06T17:00:17Z"
-    assert ("unknown_fields" in decoded) == args.verbose
-    assert ("probable_tank_installed_timestamp_raw" in decoded) == args.verbose
-    assert ("probable_tank_installed_local" in decoded) == args.verbose
-    assert ("raw_frame_hex" in decoded) == args.rawframe
+    self_check(decoded["temperatures_c"]["zone_1"] == 22.0, 'decoded["temperatures_c"]["zone_1"] == 22.0')
+    self_check(decoded["gas"]["weight_kg"] == 10.323, 'decoded["gas"]["weight_kg"] == 10.323')
+    self_check(decoded["gas"]["level_percent"] == 93, 'decoded["gas"]["level_percent"] == 93')
+    self_check(decoded["gas"]["capacity_kg"] == 11.0, 'decoded["gas"]["capacity_kg"] == 11.0')
+    self_check(decoded["status"] == "online", 'decoded["status"] == "online"')
+    self_check(decoded["hood_light_sensitivity_percent"] == 24, 'decoded["hood_light_sensitivity_percent"] == 24')
+    self_check(decoded["probable_tank_installed_utc"] == "2026-08-06T17:00:17Z", 'decoded["probable_tank_installed_utc"] == "2026-08-06T17:00:17Z"')
+    self_check(("unknown_fields" in decoded) == args.verbose, '("unknown_fields" in decoded) == args.verbose')
+    self_check(("probable_tank_installed_timestamp_raw" in decoded) == args.verbose, '("probable_tank_installed_timestamp_raw" in decoded) == args.verbose')
+    self_check(("probable_tank_installed_local" in decoded) == args.verbose, '("probable_tank_installed_local" in decoded) == args.verbose')
+    self_check(("raw_frame_hex" in decoded) == args.rawframe, '("raw_frame_hex" in decoded) == args.rawframe')
 
     event = make_event(
         decoded,
@@ -1131,19 +1142,19 @@ def run_self_test(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
         ("192.168.6.251", DEFAULT_TZSP_PORT),
         include_network_metadata=args.verbose,
     )
-    assert ("mirror_sender" in event) == args.verbose
-    assert ("inner_tcp" in event) == args.verbose
+    self_check(("mirror_sender" in event) == args.verbose, '("mirror_sender" in event) == args.verbose')
+    self_check(("inner_tcp" in event) == args.verbose, '("inner_tcp" in event) == args.verbose')
 
     offline_since = "2026-08-16T10:00:00Z"
     offline_event = make_offline_event(event, args.device_id, offline_since)
-    assert offline_event["g32"]["status"] == "offline"
-    assert offline_event["received_at_utc"] == event["received_at_utc"]
-    assert offline_event["offline_since_utc"] == offline_since
-    assert event["g32"]["status"] == "online"
-    assert not offline_heartbeat_due(59.9, 0.0, None, 60.0)
-    assert offline_heartbeat_due(60.0, 0.0, None, 60.0)
-    assert not offline_heartbeat_due(119.9, 0.0, 60.0, 60.0)
-    assert offline_heartbeat_due(120.0, 0.0, 60.0, 60.0)
+    self_check(offline_event["g32"]["status"] == "offline", 'offline_event["g32"]["status"] == "offline"')
+    self_check(offline_event["received_at_utc"] == event["received_at_utc"], 'offline_event["received_at_utc"] == event["received_at_utc"]')
+    self_check(offline_event["offline_since_utc"] == offline_since, 'offline_event["offline_since_utc"] == offline_since')
+    self_check(event["g32"]["status"] == "online", 'event["g32"]["status"] == "online"')
+    self_check(not offline_heartbeat_due(59.9, 0.0, None, 60.0), 'not offline_heartbeat_due(59.9, 0.0, None, 60.0)')
+    self_check(offline_heartbeat_due(60.0, 0.0, None, 60.0), 'offline_heartbeat_due(60.0, 0.0, None, 60.0)')
+    self_check(not offline_heartbeat_due(119.9, 0.0, 60.0, 60.0), 'not offline_heartbeat_due(119.9, 0.0, 60.0, 60.0)')
+    self_check(offline_heartbeat_due(120.0, 0.0, 60.0, 60.0), 'offline_heartbeat_due(120.0, 0.0, 60.0, 60.0)')
     output_event(event, args)
     print("self-test passed", file=sys.stderr)
     return 0
@@ -1371,7 +1382,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"unknown timezone: {args.timezone}")
 
     if args.self_test:
-        return run_self_test(args, local_timezone)
+        try:
+            return run_self_test(args, local_timezone)
+        except SelfTestError as exc:
+            print(exc, file=sys.stderr)
+            return 1
     try:
         return listen(args, local_timezone)
     except (OSError, RuntimeError) as exc:

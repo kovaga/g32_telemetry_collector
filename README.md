@@ -99,6 +99,12 @@ One JSON event is published per decoded frame:
 - If no frame arrives for `offline_after` seconds (default 60), the last event
   is republished with `"status": "offline"` plus `offline_since_utc`, and
   repeated at the same interval.
+- The collector itself publishes a retained `online` / `offline` to
+  `availability_topic` (default `openhab/g32/availability`). The broker sets
+  `offline` automatically via MQTT last will if the collector crashes or loses
+  its connection, so stale grill data can be recognised. `g32.status` says
+  whether the *grill* is sending; the availability topic says whether the
+  *collector* is running.
 - `--verbose` adds network metadata and the undecoded bytes; `--rawframe` adds
   the raw frame as hex.
 

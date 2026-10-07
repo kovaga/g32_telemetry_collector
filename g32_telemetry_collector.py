@@ -41,6 +41,7 @@ DEFAULT_HTTP_PORT = 8765
 DEFAULT_HTTP_PATH = "/g32"
 DEFAULT_MQTT_PORT = 1883
 DEFAULT_MQTT_TOPIC = "openhab/g32/status"
+DEFAULT_MQTT_AVAILABILITY_TOPIC = "openhab/g32/availability"
 DEFAULT_OFFLINE_SECONDS = 60.0
 G32_MAGIC = b"\xa3\x3a"
 G32_FRAME_LENGTH = 50
@@ -79,6 +80,7 @@ CONFIG_SCHEMA = {
         "host": ("mqtt_host", "optional_string"),
         "port": ("mqtt_port", "int"),
         "topic": ("mqtt_topic", "string"),
+        "availability_topic": ("mqtt_availability_topic", "string"),
         "qos": ("mqtt_qos", "int"),
         "retain": ("mqtt_retain", "bool"),
         "client_id": ("mqtt_client_id", "string"),
@@ -269,6 +271,7 @@ class MQTTPublisher:
 
         self._mqtt = mqtt
         self._topic = args.mqtt_topic
+        self._availability_topic = args.mqtt_availability_topic or None
         self._qos = args.mqtt_qos
         self._retain = args.mqtt_retain
         self._verbose = args.verbose
@@ -301,12 +304,17 @@ class MQTTPublisher:
             self._client.username_pw_set(args.mqtt_username, password)
         if args.mqtt_tls:
             self._client.tls_set()
+        if self._availability_topic:
+            # The broker publishes this if the collector vanishes without a
+            # clean disconnect (crash, power loss, network failure).
+            self._client.will_set(self._availability_topic, b"offline", qos=self._qos, retain=True)
 
         self._client.connect_async(args.mqtt_host, args.mqtt_port, keepalive=60)
         self._client.loop_start()
         print(
             f"MQTT JSON topic: {args.mqtt_host}:{args.mqtt_port}/{args.mqtt_topic} "
-            f"qos={args.mqtt_qos} retain={str(args.mqtt_retain).lower()}",
+            f"qos={args.mqtt_qos} retain={str(args.mqtt_retain).lower()} "
+            f"availability={self._availability_topic or 'disabled'}",
             file=sys.stderr,
             flush=True,
         )
@@ -334,6 +342,8 @@ class MQTTPublisher:
         if self._verbose:
             state = "connected" if succeeded else f"connection refused ({reason_code})"
             print(f"MQTT {state}", file=sys.stderr, flush=True)
+        if succeeded and self._availability_topic:
+            self._client.publish(self._availability_topic, b"online", qos=self._qos, retain=True)
         if succeeded and payload is not None:
             self._publish_now(payload)
 
@@ -367,6 +377,15 @@ class MQTTPublisher:
 
     def close(self) -> None:
         self._closing = True
+        with self._lock:
+            connected = self._connected
+        if connected and self._availability_topic:
+            # A clean disconnect discards the last will, so announce it here.
+            info = self._client.publish(self._availability_topic, b"offline", qos=self._qos, retain=True)
+            try:
+                info.wait_for_publish(timeout=5.0)
+            except (RuntimeError, ValueError):
+                pass
         self._client.disconnect()
         self._client.loop_stop()
 
@@ -803,6 +822,7 @@ def build_parser(config_defaults: dict[str, Any] | None = None) -> argparse.Argu
   host = 192.168.9.12
   port = 1883
   topic = openhab/g32/status
+  availability_topic = openhab/g32/availability
   qos = 1
   retain = true
   client_id = g32-telemetry-collector
@@ -945,6 +965,15 @@ command-line password option because argv is visible in ps.
         "--mqtt-topic",
         default=config_default("mqtt_topic", DEFAULT_MQTT_TOPIC),
         help="topic receiving the complete JSON event (default: %(default)s)",
+    )
+    mqtt_group.add_argument(
+        "--mqtt-availability-topic",
+        default=config_default("mqtt_availability_topic", DEFAULT_MQTT_AVAILABILITY_TOPIC),
+        help=(
+            "retained topic receiving 'online' while the collector is connected and "
+            "'offline' (MQTT last will) when it stops or dies; empty disables "
+            "(default: %(default)s)"
+        ),
     )
     mqtt_group.add_argument(
         "--mqtt-qos",
@@ -1325,6 +1354,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--offline-after must be greater than zero")
     if not args.mqtt_topic:
         parser.error("--mqtt-topic cannot be empty")
+    if args.mqtt_availability_topic == args.mqtt_topic:
+        parser.error("--mqtt-availability-topic must differ from --mqtt-topic")
     if not args.mqtt_client_id:
         parser.error("--mqtt-client-id cannot be empty")
     if args.mqtt_enabled and not args.mqtt_host:

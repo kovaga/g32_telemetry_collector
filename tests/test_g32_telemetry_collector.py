@@ -283,12 +283,49 @@ def test_offline_event_without_previous_frame() -> None:
     assert "status_published_at_utc" in event
 
 
-def test_offline_event_keeps_last_values_without_mutating_them() -> None:
+def test_offline_event_keeps_only_meaningful_fields() -> None:
+    online = {
+        "received_at_utc": "2026-08-16T09:59:00Z",
+        "g32": decode(include_unknown=True),
+        "mirror_sender": {"ip": "192.168.6.251", "port": 37009},
+    }
+    offline = g32.make_offline_event(online, None, "2026-08-16T10:00:00Z")
+    assert offline["received_at_utc"] == "2026-08-16T09:59:00Z"  # last time the grill was on
+    assert set(offline["g32"]) == {
+        "device_id",
+        "status",
+        "gas",
+        "probable_tank_installed_utc",
+        "probable_tank_installed_timestamp_raw",
+        "probable_tank_installed_local",
+    }
+    assert offline["g32"]["status"] == "offline"
+    assert offline["g32"]["gas"] == online["g32"]["gas"]
+    assert "mirror_sender" not in offline
+
+
+def test_offline_event_does_not_mutate_last_event() -> None:
     online = {"received_at_utc": "2026-08-16T09:59:00Z", "g32": decode()}
     offline = g32.make_offline_event(online, None, "2026-08-16T10:00:00Z")
-    assert offline["g32"]["status"] == "offline"
-    assert offline["g32"]["temperatures_c"] == online["g32"]["temperatures_c"]
+    offline["g32"]["gas"]["weight_kg"] = 0
     assert online["g32"]["status"] == "online"
+    assert online["g32"]["gas"]["weight_kg"] == 10.323
+
+
+def test_offline_event_from_restored_offline_event() -> None:
+    first = g32.make_offline_event(
+        {"received_at_utc": "2026-08-16T09:59:00Z", "g32": decode()}, None, "2026-08-16T10:00:00Z"
+    )
+    again = g32.make_offline_event(first, None, "2026-08-16T10:00:00Z")
+    assert again["g32"] == first["g32"]
+    assert again["received_at_utc"] == "2026-08-16T09:59:00Z"
+
+
+def test_human_offline_line_shows_gas() -> None:
+    online = {"received_at_utc": "2026-08-16T09:59:00Z", "g32": decode()}
+    line = g32.format_human(g32.make_offline_event(online, None, "2026-08-16T10:00:00Z"))
+    assert "status=offline last_seen=2026-08-16T09:59:00Z" in line
+    assert "gas=10.323kg/11.000kg level=93%" in line
 
 
 @pytest.mark.parametrize(
@@ -341,6 +378,11 @@ def test_config_readable_by_others_is_rejected(tmp_path: Path) -> None:
 def test_invalid_config_is_rejected(tmp_path: Path, text: str) -> None:
     with pytest.raises(ValueError):
         g32.load_config(str(write_config(tmp_path, text)))
+
+
+def test_negative_stats_interval_is_rejected() -> None:
+    with pytest.raises(SystemExit):
+        g32.main(["--self-test", "--stats-interval", "-1"])
 
 
 def test_availability_topic_must_differ_from_status_topic() -> None:
@@ -489,6 +531,55 @@ def test_mqtt_close_without_connection_publishes_nothing(fake_paho, capsys) -> N
     assert client.published() == []
 
 
+def retained(payload: bytes, retain: bool = True) -> types.SimpleNamespace:
+    return types.SimpleNamespace(payload=payload, retain=retain)
+
+
+def test_mqtt_reads_back_retained_event_once(fake_paho, capsys) -> None:
+    publisher = g32.MQTTPublisher(mqtt_args())
+    client = fake_paho.instances[0]
+    publisher._on_connect(client, None, {}, 0)
+    subscribe = [call for call in client.calls if call[0] == "subscribe"]
+    assert subscribe and subscribe[0][1] == ("openhab/g32/status",)
+
+    event = {"received_at_utc": "2026-08-16T09:59:00Z", "g32": {"status": "offline", "gas": {}}}
+    publisher._on_message(client, None, retained(json.dumps(event).encode()))
+    assert ("unsubscribe", ("openhab/g32/status",), {}) in client.calls
+    assert publisher.take_restored_event() == event
+    assert publisher.take_restored_event() is None
+
+    # Later messages (our own publications) are ignored.
+    publisher._on_message(client, None, retained(b'{"g32":{"status":"online"}}'))
+    assert publisher.take_restored_event() is None
+
+
+def test_mqtt_does_not_resubscribe_after_reconnect(fake_paho, capsys) -> None:
+    publisher = g32.MQTTPublisher(mqtt_args())
+    client = fake_paho.instances[0]
+    publisher._on_connect(client, None, {}, 0)
+    publisher._on_message(client, None, retained(b'{"g32":{}}'))
+    publisher._on_connect(client, None, {}, 0)
+    assert client.call_names().count("subscribe") == 1
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        pytest.param(retained(b'{"g32":{}}', retain=False), id="live-not-retained"),
+        pytest.param(retained(b"not json"), id="invalid-json"),
+        pytest.param(retained(b'{"other":1}'), id="no-g32-object"),
+        pytest.param(retained(b"\xff\xfe"), id="invalid-utf8"),
+    ],
+)
+def test_mqtt_ignores_unusable_retained_message(fake_paho, capsys, message) -> None:
+    publisher = g32.MQTTPublisher(mqtt_args())
+    client = fake_paho.instances[0]
+    publisher._on_connect(client, None, {}, 0)
+    publisher._on_message(client, None, message)
+    assert publisher.take_restored_event() is None
+    assert "unsubscribe" in client.call_names()
+
+
 def test_mqtt_availability_can_be_disabled(fake_paho, capsys) -> None:
     publisher = g32.MQTTPublisher(mqtt_args("--mqtt-availability-topic", ""))
     client = fake_paho.instances[0]
@@ -509,10 +600,11 @@ def free_udp_port() -> int:
 
 
 @pytest.fixture
-def daemon():
+def daemon(request):
     port = free_udp_port()
+    extra = getattr(request, "param", [])
     process = subprocess.Popen(
-        [sys.executable, str(SCRIPT), "--bind", "127.0.0.1", "--port", str(port)],
+        [sys.executable, str(SCRIPT), "--bind", "127.0.0.1", "--port", str(port), *extra],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -547,3 +639,18 @@ def test_daemon_shuts_down_cleanly_on_sigterm(daemon) -> None:
     _, stderr = stop(process)
     assert process.returncode == 0
     assert "Stopped:" in stderr
+
+
+def test_daemon_prints_no_statistics_by_default(daemon) -> None:
+    process, _ = daemon
+    time.sleep(1.2)
+    _, stderr = stop(process)
+    assert "Statistics:" not in stderr
+
+
+@pytest.mark.parametrize("daemon", [["--stats-interval", "0.3"]], indirect=True)
+def test_daemon_prints_statistics_at_interval(daemon) -> None:
+    process, _ = daemon
+    time.sleep(1.2)
+    _, stderr = stop(process)
+    assert stderr.count("Statistics: tzsp=0") >= 1

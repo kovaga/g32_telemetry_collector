@@ -96,15 +96,23 @@ One JSON event is published per decoded frame:
 ```
 
 - A `null` probe temperature means no probe is connected.
-- If no frame arrives for `offline_after` seconds (default 60), the last event
-  is republished with `"status": "offline"` plus `offline_since_utc`, and
-  repeated at the same interval.
+- If no frame arrives for `offline_after` seconds (default 60), an offline event
+  is published and repeated at the same interval. It keeps only the values
+  that stay valid while the grill is off: `device_id`, `gas`,
+  `probable_tank_installed_utc` and `received_at_utc` (the last time the grill
+  was on), plus `offline_since_utc`. Temperatures, lid and light are left out.
+- After a collector restart the last reading is read back from the retained
+  MQTT status message, so the gas values survive restarts while the grill is
+  off. If nothing is known yet, no empty offline event is sent to MQTT, so
+  existing retained data is never overwritten.
 - The collector itself publishes a retained `online` / `offline` to
   `availability_topic` (default `openhab/g32/availability`). The broker sets
   `offline` automatically via MQTT last will if the collector crashes or loses
   its connection, so stale grill data can be recognised. `g32.status` says
   whether the *grill* is sending; the availability topic says whether the
   *collector* is running.
+- `--stats-interval N` prints packet/frame counters to the log every N seconds
+  (off by default).
 - `--verbose` adds network metadata and the undecoded bytes; `--rawframe` adds
   the raw frame as hex.
 

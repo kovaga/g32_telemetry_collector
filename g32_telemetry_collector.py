@@ -49,6 +49,15 @@ TCP_FIN = 0x01
 TCP_SYN = 0x02
 TCP_RST = 0x04
 VLAN_ETHERTYPES = {0x8100, 0x88A8, 0x9100}
+# Fields of the last frame that stay meaningful while the grill is off.
+# Temperatures, lid and light are dropped because stale values mislead.
+OFFLINE_KEPT_FIELDS = (
+    "device_id",
+    "gas",
+    "probable_tank_installed_utc",
+    "probable_tank_installed_timestamp_raw",
+    "probable_tank_installed_local",
+)
 
 CONFIG_SCHEMA = {
     "listener": {
@@ -68,6 +77,7 @@ CONFIG_SCHEMA = {
         "rawframe": ("rawframe", "bool"),
         "verbose": ("verbose", "bool"),
         "offline_after": ("offline_after", "float"),
+        "stats_interval": ("stats_interval", "float"),
     },
     "http": {
         "enabled": ("http_enabled", "bool"),
@@ -176,6 +186,17 @@ class Counters:
     malformed_datagrams: int = 0
     offline_events: int = 0
 
+    def summary(self) -> str:
+        return (
+            f"tzsp={self.tzsp_datagrams} "
+            f"inner_tcp={self.inner_tcp_segments} "
+            f"matching_tcp={self.matching_tcp_segments} "
+            f"frames={self.decoded_frames} "
+            f"offline_events={self.offline_events} "
+            f"gaps={self.stream_gaps} "
+            f"malformed={self.malformed_datagrams}"
+        )
+
 
 class LatestJSON:
     """Thread-safe storage for the most recently decoded JSON event."""
@@ -280,6 +301,9 @@ class MQTTPublisher:
         self._latest_payload: bytes | None = None
         self._lock = threading.Lock()
         self._last_publish_warning = 0.0
+        # After a restart the last gas reading is only known from the broker.
+        self._restore_pending = True
+        self._restored_event: dict[str, Any] | None = None
 
         # Paho 2.x requires an explicit callback API version. Retain support for
         # distribution packages that still ship Paho 1.x.
@@ -295,6 +319,7 @@ class MQTTPublisher:
 
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
         self._client.reconnect_delay_set(min_delay=1, max_delay=30)
 
         if args.mqtt_username:
@@ -342,10 +367,50 @@ class MQTTPublisher:
         if self._verbose:
             state = "connected" if succeeded else f"connection refused ({reason_code})"
             print(f"MQTT {state}", file=sys.stderr, flush=True)
+        with self._lock:
+            restore_pending = self._restore_pending
+        if succeeded and restore_pending:
+            client.subscribe(self._topic, qos=self._qos)
         if succeeded and self._availability_topic:
             self._client.publish(self._availability_topic, b"online", qos=self._qos, retain=True)
         if succeeded and payload is not None:
             self._publish_now(payload)
+
+    def _on_message(self, client: Any, userdata: Any, message: Any) -> None:
+        """Take the retained status event once, then stop listening.
+
+        A non-retained message is our own live publication, which means the
+        broker had nothing retained.
+        """
+
+        with self._lock:
+            if not self._restore_pending:
+                return
+            self._restore_pending = False
+        client.unsubscribe(self._topic)
+        if not message.retain:
+            return
+        try:
+            event = json.loads(message.payload)
+        except (ValueError, UnicodeDecodeError):
+            return
+        if not isinstance(event, dict) or not isinstance(event.get("g32"), dict):
+            return
+        with self._lock:
+            self._restored_event = event
+        if self._verbose:
+            print(
+                f"MQTT restored last event received at {event.get('received_at_utc', 'unknown')}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    def take_restored_event(self) -> dict[str, Any] | None:
+        """Return the event read back from the broker, at most once."""
+
+        with self._lock:
+            event, self._restored_event = self._restored_event, None
+        return event
 
     def _on_disconnect(self, client: Any, userdata: Any, *args: Any) -> None:
         with self._lock:
@@ -646,11 +711,19 @@ def format_human(event: dict[str, Any]) -> str:
     if decoded["status"] == "offline":
         published_at = event["status_published_at_utc"]
         last_seen = event.get("received_at_utc", "never")
-        return (
+        line = (
             f'{published_at} id={decoded.get("device_id", "unknown")} '
             f'status=offline last_seen={last_seen} '
             f'offline_since={event["offline_since_utc"]}'
         )
+        if "gas" in decoded:
+            gas = decoded["gas"]
+            line += (
+                f' gas={gas["weight_kg"]:.3f}kg/{gas["capacity_kg"]:.3f}kg'
+                f' level={gas["level_percent"]}%'
+                f' probable_tank_installed={decoded.get("probable_tank_installed_utc") or "unknown"}'
+            )
+        return line
 
     temps = decoded["temperatures_c"]
     zones = ",".join("-" if temps[f"zone_{i}"] is None else f'{temps[f"zone_{i}"]:.1f}' for i in range(1, 5))
@@ -804,12 +877,13 @@ def build_parser(config_defaults: dict[str, Any] | None = None) -> argparse.Argu
   device_id = 84e0422c
 
   [output]
-  timezone = UTC
+  timezone = Europe/Berlin
   human = false
   pretty = false
   rawframe = false
   verbose = false
   offline_after = 60
+  stats_interval = 0
 
   [http]
   enabled = true
@@ -918,6 +992,13 @@ command-line password option because argv is visible in ps.
             "publish offline after this many seconds without a decoded frame, "
             "then repeat at the same interval (default: %(default)s)"
         ),
+    )
+    parser.add_argument(
+        "--stats-interval",
+        type=float,
+        default=config_default("stats_interval", 0.0),
+        metavar="SECONDS",
+        help="print packet/frame counters to stderr every SECONDS; 0 disables (default: %(default)s)",
     )
     http_group = parser.add_argument_group("HTTP JSON export")
     http_group.add_argument(
@@ -1049,14 +1130,23 @@ def make_offline_event(
     expected_device_id: bytes | None,
     offline_since_utc: str,
 ) -> dict[str, Any]:
-    if last_online_event is None:
-        decoded: dict[str, Any] = {"status": "offline"}
-        if expected_device_id is not None:
-            decoded["device_id"] = expected_device_id.hex()
-        event: dict[str, Any] = {"g32": decoded}
-    else:
-        event = copy.deepcopy(last_online_event)
-        event["g32"]["status"] = "offline"
+    """Build the offline event from the last known event, if any.
+
+    received_at_utc is kept and therefore tells when the grill was last on.
+    """
+
+    decoded: dict[str, Any] = {}
+    event: dict[str, Any] = {"g32": decoded}
+    if last_online_event is not None:
+        last_decoded = last_online_event["g32"]
+        for name in OFFLINE_KEPT_FIELDS:
+            if name in last_decoded:
+                decoded[name] = copy.deepcopy(last_decoded[name])
+        if "received_at_utc" in last_online_event:
+            event["received_at_utc"] = last_online_event["received_at_utc"]
+    if "device_id" not in decoded and expected_device_id is not None:
+        decoded["device_id"] = expected_device_id.hex()
+    decoded["status"] = "offline"
 
     event["offline_since_utc"] = offline_since_utc
     event["status_published_at_utc"] = utc_now_iso()
@@ -1068,9 +1158,11 @@ def dispatch_event(
     args: argparse.Namespace,
     latest_json: LatestJSON,
     mqtt_publisher: MQTTPublisher | None,
+    *,
+    publish_mqtt: bool = True,
 ) -> None:
     payload = latest_json.update(event)
-    if mqtt_publisher is not None:
+    if mqtt_publisher is not None and publish_mqtt:
         mqtt_publisher.publish(payload)
     output_event(event, args)
 
@@ -1150,6 +1242,8 @@ def run_self_test(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
     self_check(offline_event["g32"]["status"] == "offline", 'offline_event["g32"]["status"] == "offline"')
     self_check(offline_event["received_at_utc"] == event["received_at_utc"], 'offline_event["received_at_utc"] == event["received_at_utc"]')
     self_check(offline_event["offline_since_utc"] == offline_since, 'offline_event["offline_since_utc"] == offline_since')
+    self_check(offline_event["g32"]["gas"] == decoded["gas"], 'offline_event["g32"]["gas"] == decoded["gas"]')
+    self_check("temperatures_c" not in offline_event["g32"], '"temperatures_c" not in offline_event["g32"]')
     self_check(event["g32"]["status"] == "online", 'event["g32"]["status"] == "online"')
     self_check(not offline_heartbeat_due(59.9, 0.0, None, 60.0), 'not offline_heartbeat_due(59.9, 0.0, None, 60.0)')
     self_check(offline_heartbeat_due(60.0, 0.0, None, 60.0), 'offline_heartbeat_due(60.0, 0.0, None, 60.0)')
@@ -1185,6 +1279,7 @@ def listen(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
     http_exporter: HTTPExporter | None = None
     mqtt_publisher: MQTTPublisher | None = None
     listener_started_monotonic = time.monotonic()
+    last_stats_monotonic = listener_started_monotonic
     last_frame_monotonic: float | None = None
     last_offline_publish_monotonic: float | None = None
     last_online_event: dict[str, Any] | None = None
@@ -1203,7 +1298,20 @@ def listen(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
             mqtt_publisher = MQTTPublisher(args)
 
         while True:
+            if last_online_event is None and mqtt_publisher is not None:
+                restored = mqtt_publisher.take_restored_event()
+                restored_id = restored["g32"].get("device_id") if restored else None
+                if restored is not None and (
+                    expected_device_id is None or restored_id == expected_device_id.hex()
+                ):
+                    last_online_event = restored
+                    offline_since_utc = offline_since_utc or restored.get("offline_since_utc")
+
             now = time.monotonic()
+            if args.stats_interval and now - last_stats_monotonic >= args.stats_interval:
+                print(f"Statistics: {counters.summary()}", file=sys.stderr, flush=True)
+                last_stats_monotonic = now
+
             last_frame_or_start = (
                 last_frame_monotonic
                 if last_frame_monotonic is not None
@@ -1222,7 +1330,15 @@ def listen(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
                     expected_device_id,
                     offline_since_utc,
                 )
-                dispatch_event(offline_event, args, latest_json, mqtt_publisher)
+                # Without any known reading the event holds no data; publishing
+                # it would replace the useful retained event on the broker.
+                dispatch_event(
+                    offline_event,
+                    args,
+                    latest_json,
+                    mqtt_publisher,
+                    publish_mqtt=last_online_event is not None,
+                )
                 last_offline_publish_monotonic = now
                 counters.offline_events += 1
 
@@ -1295,17 +1411,7 @@ def listen(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
         if http_exporter is not None:
             http_exporter.close()
         sock.close()
-        print(
-            "Stopped: "
-            f"tzsp={counters.tzsp_datagrams} "
-            f"inner_tcp={counters.inner_tcp_segments} "
-            f"matching_tcp={counters.matching_tcp_segments} "
-            f"frames={counters.decoded_frames} "
-            f"offline_events={counters.offline_events} "
-            f"gaps={counters.stream_gaps} "
-            f"malformed={counters.malformed_datagrams}",
-            file=sys.stderr,
-        )
+        print(f"Stopped: {counters.summary()}", file=sys.stderr)
     return 0
 
 
@@ -1361,6 +1467,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--mqtt-port must be between 1 and 65535")
     if args.mqtt_qos not in (0, 1, 2):
         parser.error("--mqtt-qos must be 0, 1, or 2")
+    if args.stats_interval < 0:
+        parser.error("--stats-interval cannot be negative")
     if args.offline_after <= 0:
         parser.error("--offline-after must be greater than zero")
     if not args.mqtt_topic:

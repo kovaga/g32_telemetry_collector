@@ -20,6 +20,7 @@ import configparser
 import copy
 import json
 import os
+import signal
 import socket
 import struct
 import sys
@@ -1119,7 +1120,18 @@ def run_self_test(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
     return 0
 
 
+def stop_on_sigterm(signum: int, frame: Any) -> None:
+    """Treat SIGTERM (systemctl stop, docker stop) like Ctrl+C.
+
+    Python's default SIGTERM action ends the process immediately, skipping the
+    finally block that disconnects MQTT cleanly and prints the counters.
+    """
+
+    raise KeyboardInterrupt
+
+
 def listen(args: argparse.Namespace, local_timezone: ZoneInfo) -> int:
+    signal.signal(signal.SIGTERM, stop_on_sigterm)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)

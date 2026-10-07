@@ -126,3 +126,15 @@ One JSON event is published per decoded frame:
 | 26–30, 32, 34–36, 41–44, 47–49 | Unknown          | under analysis    |
 
 Temperature encoding: `first_byte * 10 + second_byte / 10` °C.
+
+## Development
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m pytest
+```
+
+The tests cover TZSP/TCP parsing, stream reassembly, frame decoding,
+configuration, the HTTP endpoint, the MQTT publisher (using a fake paho
+client, no broker needed) and the running daemon end to end.

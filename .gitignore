@@ -1,0 +1,20 @@
+# Real configuration contains the MQTT password
+config.ini
+*.local.ini
+
+# Packet captures may contain private network data
+*.pcap
+*.pcapng
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors / OS
+*.swp
+*~
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,3 @@
+# Only needed when MQTT publishing is enabled. Paho 1.x and 2.x are supported.
+# Debian/Ubuntu alternative: apt install python3-paho-mqtt
+paho-mqtt>=1.6

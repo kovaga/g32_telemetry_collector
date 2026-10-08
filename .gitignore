@@ -18,3 +18,7 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# Claude Code sandbox placeholders (not project files)
+.claude/
+.mcp.json

@@ -872,7 +872,7 @@ def build_parser(config_defaults: dict[str, Any] | None = None) -> argparse.Argu
   port = 37009
 
   [grill]
-  ip = 192.168.6.117
+  ip = 192.168.6.103
   tcp_port = 4501
   device_id = 84e0422c
 

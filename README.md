@@ -43,16 +43,23 @@ G32 grill ──TCP:4501──► Otto Wilde cloud
 
 ## MikroTik setup
 
-Mirror the grill's cloud traffic to the host running the collector (replace the
-addresses with your own). Only the grill → cloud direction is needed:
+Mirror the grill's outgoing traffic to the host running the collector. Only the
+grill → cloud direction is needed. This is the working rule of the reference
+installation (grill `192.168.6.103`, collector host `192.168.6.15`); replace the
+addresses with your own:
 
 ```
-/ip firewall mangle add chain=forward src-address=192.168.6.117 protocol=tcp dst-port=4501 \
-    action=sniff-tzsp sniff-target=<collector-ip> sniff-target-port=37009 \
-    comment="G32 telemetry -> collector"
+/ip firewall mangle
+add action=sniff-tzsp chain=prerouting comment="G32 intercept forward to s5" \
+    sniff-target=192.168.6.15 sniff-target-port=37009 src-address=192.168.6.103
 ```
 
-`sniff-tzsp` only sends a copy; the grill's traffic is delivered as usual.
+- `chain=prerouting` sees the packets as they arrive from the grill, with the
+  grill's own address as source.
+- The rule mirrors all of the grill's traffic; the collector itself picks out
+  the cloud connection (TCP port 4501, `--tcp-port`).
+- `sniff-tzsp` only sends a copy; the grill's traffic is delivered as usual.
+- `sniff-target-port` must match the collector's `port` (default 37009).
 
 ## Quick start
 
@@ -283,7 +290,7 @@ TCP segments are reassembled, and retransmissions are ignored.
 | Symptom | Check |
 |---|---|
 | No output at all | Is the mangle rule counting packets (`/ip firewall mangle print stats`)? Does the host firewall allow UDP 37009? Use `--stats-interval 10` to see whether TZSP datagrams arrive (`tzsp=`). |
-| `tzsp` counts up but `frames=0` | Grill IP or port filter wrong (`--grill-ip`, `--tcp-port`), or a `--device-id` that does not match. FastTracked connections bypass mangle rules; exclude the grill from FastTrack with an `accept` rule before the `fasttrack-connection` rule. |
+| `tzsp` counts up but `frames=0` | Grill IP or port filter wrong (`--grill-ip`, `--tcp-port`), or a `--device-id` that does not match. To see what is mirrored, capture it with `tcpdump -n -i any udp port 37009 -w g32.pcap` and open it in Wireshark (Analyze → Decode As → UDP port 37009 → TZSP). |
 | Collector refuses to start: "must not be readable by group or others" | `chmod 600 config.ini` |
 | "MQTT requires paho-mqtt" | `pip install -r requirements.txt` or `apt install python3-paho-mqtt` |
 | MQTT values stay old in openHAB | Check `openhab/g32/availability`: `offline` means the collector is down. |

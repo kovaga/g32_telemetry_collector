@@ -1,0 +1,66 @@
+<%- | String[1]                     $tzsp_bind,
+      Integer[1, 65535]             $tzsp_port,
+      String[1]                     $grill_ip,
+      Integer[1, 65535]             $grill_tcp_port,
+      String[8, 8]                  $device_id,
+      Optional[Integer[0]]          $tare_weight_g,
+      String[1]                     $timezone,
+      Boolean                       $human_output,
+      Boolean                       $pretty_output,
+      Boolean                       $include_rawframe,
+      Boolean                       $verbose,
+      Integer[1]                    $offline_after,
+      Boolean                       $http_enabled,
+      String[1]                     $http_bind,
+      Integer[1, 65535]             $http_port,
+      String[1]                     $http_path,
+      Boolean                       $mqtt_enabled,
+      String[1]                     $mqtt_host,
+      Integer[1, 65535]             $mqtt_port,
+      String[1]                     $mqtt_topic,
+      Integer[0, 2]                 $mqtt_qos,
+      Boolean                       $mqtt_retain,
+      String[1]                     $mqtt_client_id,
+      String[1]                     $mqtt_username,
+      Optional[Sensitive[String[1]]] $mqtt_password,
+      Boolean                       $mqtt_tls
+| -%>
+[listener]
+bind = <%= $tzsp_bind %>
+port = <%= $tzsp_port %>
+
+[grill]
+ip = <%= $grill_ip %>
+tcp_port = <%= $grill_tcp_port %>
+device_id = <%= $device_id %>
+<% if $tare_weight_g != undef { -%>
+tare_weight_g = <%= $tare_weight_g %>
+<% } -%>
+
+[output]
+timezone = <%= $timezone %>
+human = <%= $human_output %>
+pretty = <%= $pretty_output %>
+rawframe = <%= $include_rawframe %>
+verbose = <%= $verbose %>
+offline_after = <%= $offline_after %>
+
+[http]
+enabled = <%= $http_enabled %>
+bind = <%= $http_bind %>
+port = <%= $http_port %>
+path = <%= $http_path %>
+
+[mqtt]
+enabled = <%= $mqtt_enabled %>
+host = <%= $mqtt_host %>
+port = <%= $mqtt_port %>
+topic = <%= $mqtt_topic %>
+qos = <%= $mqtt_qos %>
+retain = <%= $mqtt_retain %>
+client_id = <%= $mqtt_client_id %>
+username = <%= $mqtt_username %>
+<% if $mqtt_password != undef { -%>
+password = <%= $mqtt_password.unwrap %>
+<% } -%>
+tls = <%= $mqtt_tls %>

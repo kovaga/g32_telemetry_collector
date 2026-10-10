@@ -27,6 +27,7 @@ G32 grill ──TCP:4501──► Otto Wilde cloud
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Running as a service](#running-as-a-service)
+- [Deploying with Puppet](#deploying-with-puppet)
 - [Output](#output)
 - [openHAB example](#openhab-example)
 - [Frame format](#frame-format)
@@ -145,6 +146,58 @@ To update, install the new script the same way and run
 `sudo systemctl restart g32-telemetry-collector`. On `systemctl stop` the
 collector disconnects from MQTT cleanly, publishes `offline` on the
 availability topic and logs its final counters.
+
+## Deploying with Puppet
+
+`puppet/` contains a Puppet class and config template that deploy the same
+hardened service as the systemd unit above, managed by Puppet:
+
+| Repository file | Location in the Puppet module `packages` |
+|---|---|
+| `puppet/g32_telemetry_collector.pp` | `manifests/g32_telemetry_collector.pp` (class `packages::g32_telemetry_collector`) |
+| `puppet/g32_telemetry_collector.conf.epp` | `templates/g32_telemetry_collector/g32_telemetry_collector.conf.epp` |
+| `g32_telemetry_collector.py` | `files/g32_telemetry_collector/g32_telemetry_collector.py` |
+
+Requirements: `puppetlabs/stdlib` and `puppet/systemd` >= 8.3.0 (for
+`LoadCredential` in `systemd::manage_unit`).
+
+The class installs `python3-paho-mqtt`, copies the script to
+`/opt/g32_telemetry_collector/`, renders the config to
+`/opt/g32_telemetry_collector/g32_telemetry_collector.conf` (root, 0600, diff hidden in Puppet reports),
+passes it to the service as a systemd credential and manages
+`g32_telemetry_collector.service` (dynamic user, hardened, stdout discarded, stderr to the
+journal). The service restarts when the script or the config changes.
+
+Every parameter is a Hiera key `packages::g32_telemetry_collector::<parameter>`.
+`mqtt_password` is required while MQTT is enabled; keep it encrypted (e.g.
+with hiera-eyaml). Parameters and the config keys they set:
+
+| Parameter | Default | Config key |
+|---|---|---|
+| `tzsp_bind`, `tzsp_port` | `0.0.0.0`, `37009` | `[listener] bind`, `port` |
+| `grill_ip`, `grill_tcp_port` | `192.168.6.103`, `4501` | `[grill] ip`, `tcp_port` |
+| `device_id` | `84e0422c` | `[grill] device_id` |
+| `tare_weight_g` | not set | `[grill] tare_weight_g` (only written when set) |
+| `timezone` | `UTC` | `[output] timezone` |
+| `human_output`, `pretty_output`, `include_rawframe`, `verbose` | `false` | `[output] human`, `pretty`, `rawframe`, `verbose` |
+| `offline_after` | `60` | `[output] offline_after` |
+| `http_enabled`, `http_bind`, `http_port`, `http_path` | `false`, `127.0.0.1`, `8765`, `/g32` | `[http]` |
+| `mqtt_enabled` | `true` | `[mqtt] enabled` |
+| `mqtt_host`, `mqtt_port` | `192.168.9.12`, `1883` | `[mqtt] host`, `port` |
+| `mqtt_topic` | `openhab/g32/status` | `[mqtt] topic` |
+| `mqtt_qos`, `mqtt_retain`, `mqtt_tls` | `1`, `true`, `false` | `[mqtt] qos`, `retain`, `tls` |
+| `mqtt_client_id` | `g32_telemetry_collector` | `[mqtt] client_id` |
+| `mqtt_username`, `mqtt_password` | `mqttuser`, none | `[mqtt] username`, `password` |
+| `install_dir` | `/opt/g32_telemetry_collector` | — |
+
+Settings without a parameter keep the daemon's defaults, e.g. the availability topic `openhab/g32/availability` and `stats_interval = 0`.
+
+```sh
+journalctl -u g32_telemetry_collector -f      # follow the log
+```
+
+The repository's stand-alone unit file is an alternative to this class; use
+one or the other, not both.
 
 ## Output
 
@@ -328,4 +381,5 @@ Project files:
 | `config.example.ini` | Commented example configuration |
 | `g32-telemetry-collector.service` | systemd unit |
 | `requirements.txt` / `requirements-dev.txt` | Runtime / test dependencies |
+| `puppet/` | Puppet class and config template |
 | `tests/` | pytest suite |

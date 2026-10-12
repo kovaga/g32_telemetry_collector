@@ -1,26 +1,26 @@
 # systemd unit for g32_telemetry_collector.py
 #
 # Install:
-#   sudo install -D -m 0755 g32_telemetry_collector.py /opt/g32-telemetry-collector/g32_telemetry_collector.py
-#   sudo install -D -m 0600 config.ini /etc/g32-telemetry-collector/config.ini
-#   sudo cp g32-telemetry-collector.service /etc/systemd/system/
+#   sudo install -D -m 0755 g32_telemetry_collector.py /opt/g32_telemetry_collector/g32_telemetry_collector.py
+#   sudo install -D -m 0600 config.ini /etc/g32_telemetry_collector/config.ini
+#   sudo cp g32_telemetry_collector.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable --now g32-telemetry-collector
+#   sudo systemctl enable --now g32_telemetry_collector
 #
 # The config is passed as a systemd credential, so it stays root-only on disk
 # while the service runs as an unprivileged dynamic user.
 
 [Unit]
 Description=Otto Wilde G32 telemetry collector (TZSP -> MQTT/HTTP)
-Documentation=file:///opt/g32-telemetry-collector/README.md
+Documentation=file:///opt/g32_telemetry_collector/README.md
 Wants=network-online.target
 After=network-online.target
 
 [Service]
 Type=simple
 DynamicUser=yes
-LoadCredential=config.ini:/etc/g32-telemetry-collector/config.ini
-ExecStart=/usr/bin/python3 /opt/g32-telemetry-collector/g32_telemetry_collector.py --config %d/config.ini
+LoadCredential=config.ini:/etc/g32_telemetry_collector/config.ini
+ExecStart=/usr/bin/python3 /opt/g32_telemetry_collector/g32_telemetry_collector.py --config %d/config.ini
 Restart=on-failure
 RestartSec=5
 

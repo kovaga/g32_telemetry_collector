@@ -106,7 +106,7 @@ setting with comments.
 | `[mqtt] availability_topic` | `--mqtt-availability-topic` | `openhab/g32/availability` | Collector availability (last will); empty disables |
 | `[mqtt] qos` | `--mqtt-qos` | `1` | MQTT QoS (0–2) |
 | `[mqtt] retain` | `--mqtt-retain` | `false` | Retain the status message (recommended: `true`) |
-| `[mqtt] client_id` | `--mqtt-client-id` | `g32-telemetry-collector` | MQTT client ID |
+| `[mqtt] client_id` | `--mqtt-client-id` | `g32_telemetry_collector` | MQTT client ID |
 | `[mqtt] username` | `--mqtt-username` | none | MQTT username |
 | `[mqtt] password` | — | none | MQTT password (config file only) |
 | `[mqtt] password_env` | `--mqtt-password-env` | `G32_MQTT_PASSWORD` | Environment variable holding the password |
@@ -128,22 +128,22 @@ Compatibility: `--mqtt-config` is a deprecated alias for `--config`. If
 
 ## Running as a service
 
-`g32-telemetry-collector.service` runs the collector as an unprivileged,
+`g32_telemetry_collector.service` runs the collector as an unprivileged,
 sandboxed systemd service (`DynamicUser`, read-only system) and passes the
 config as a systemd credential, so the file stays root-only on disk:
 
 ```sh
-sudo install -D -m 0755 g32_telemetry_collector.py /opt/g32-telemetry-collector/g32_telemetry_collector.py
-sudo install -D -m 0600 config.ini /etc/g32-telemetry-collector/config.ini
-sudo cp g32-telemetry-collector.service /etc/systemd/system/
+sudo install -D -m 0755 g32_telemetry_collector.py /opt/g32_telemetry_collector/g32_telemetry_collector.py
+sudo install -D -m 0600 config.ini /etc/g32_telemetry_collector/config.ini
+sudo cp g32_telemetry_collector.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now g32-telemetry-collector
+sudo systemctl enable --now g32_telemetry_collector
 
-journalctl -u g32-telemetry-collector -f      # follow the log
+journalctl -u g32_telemetry_collector -f      # follow the log
 ```
 
 To update, install the new script the same way and run
-`sudo systemctl restart g32-telemetry-collector`. On `systemctl stop` the
+`sudo systemctl restart g32_telemetry_collector`. On `systemctl stop` the
 collector disconnects from MQTT cleanly, publishes `offline` on the
 availability topic and logs its final counters.
 
@@ -379,7 +379,7 @@ Project files:
 |---|---|
 | `g32_telemetry_collector.py` | The collector (single file, no dependencies besides paho-mqtt) |
 | `config.example.ini` | Commented example configuration |
-| `g32-telemetry-collector.service` | systemd unit |
+| `g32_telemetry_collector.service` | systemd unit |
 | `requirements.txt` / `requirements-dev.txt` | Runtime / test dependencies |
 | `puppet/` | Puppet class and config template |
 | `tests/` | pytest suite |

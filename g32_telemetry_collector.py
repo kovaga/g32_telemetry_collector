@@ -899,7 +899,7 @@ def build_parser(config_defaults: dict[str, Any] | None = None) -> argparse.Argu
   availability_topic = openhab/g32/availability
   qos = 1
   retain = true
-  client_id = g32-telemetry-collector
+  client_id = g32_telemetry_collector
   username = mqttuser
   password = change-me
   tls = false
@@ -1071,7 +1071,7 @@ command-line password option because argv is visible in ps.
     )
     mqtt_group.add_argument(
         "--mqtt-client-id",
-        default=config_default("mqtt_client_id", "g32-telemetry-collector"),
+        default=config_default("mqtt_client_id", "g32_telemetry_collector"),
         help="MQTT client ID (default: %(default)s)",
     )
     mqtt_group.add_argument(

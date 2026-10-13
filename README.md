@@ -307,9 +307,11 @@ transformation installed):
 |---|---|
 | `openhab/g32.things` | MQTT Thing `mqtt:topic:mymosquitto:g32` with one channel per status field |
 | `openhab/g32.items` | Items in group `gG32`, with units, display patterns and semantic tags |
+| `openhab/g32.sitemap` | Sitemap section (Framework7 and Material icons, gas level colored by fill level); usable on its own, or copy the `Text label=...` block into your sitemap |
 
-Copy them to `$OPENHAB_CONF/things/` and `$OPENHAB_CONF/items/` and replace
-`mymosquitto` with the ID of your MQTT broker Thing.
+Copy them to `$OPENHAB_CONF/things/`, `$OPENHAB_CONF/items/` and
+`$OPENHAB_CONF/sitemaps/` and replace `mymosquitto` with the ID of your MQTT
+broker Thing.
 
 - The Thing uses its full UID, so it does not need to be nested inside the
   broker's `Bridge` block.

@@ -1,0 +1,39 @@
+// Otto Wilde G32 sitemap section for g32.items.
+//
+// Usable on its own as a sitemap; to include it in another sitemap, copy the
+// "Text label=..." block. Icons use the Framework7 (f7:) and Material
+// (material:) icon sets supported in openHAB 4 sitemaps.
+
+sitemap g32 label="Otto Wilde G32" {
+    Text label="G32 Connected Grill" icon="material:outdoor_grill" {
+        Frame label="Connection" {
+            Text item=G32_Status label="Status [%s]" icon="f7:wifi" valuecolor=[G32_Status=="online"="green", G32_Status=="offline"="red"] {
+                Text item=G32_LastSeen icon="f7:clock"
+                Text item=G32_Collector icon="f7:antenna_radiowaves_left_right" valuecolor=[G32_Collector=="online"="green", G32_Collector=="offline"="red"]
+                Text item=G32_DeviceID icon="f7:barcode"
+                Text item=G32_LidOpen icon="material:door_front" valuecolor=[G32_LidOpen==OPEN="orange"]
+                Text item=G32_LightOn icon="f7:lightbulb"
+                Text item=G32_LightSens icon="f7:slider_horizontal_3"
+            }
+            Text item=G32_GasLevelCalc icon="f7:gauge" valuecolor=[G32_GasLevelCalc<20="red", G32_GasLevelCalc<40="orange", "green"] {
+                Text item=G32_GasLevelRep icon="f7:gauge"
+                Text item=G32_GasLevelCalc icon="f7:gauge"
+                Text item=G32_GasWeight icon="material:scale"
+                Text item=G32_GasCapacity icon="material:propane_tank"
+                Text item=G32_TankInstalled icon="f7:calendar"
+            }
+        }
+        Frame label="Grill zones" {
+            Text item=G32_Zone1 icon="material:device_thermostat"
+            Text item=G32_Zone2 icon="material:device_thermostat"
+            Text item=G32_Zone3 icon="material:device_thermostat"
+            Text item=G32_Zone4 icon="material:device_thermostat"
+        }
+        Frame label="Meat probes" {
+            Text item=G32_Probe1 icon="material:thermostat"
+            Text item=G32_Probe2 icon="material:thermostat"
+            Text item=G32_Probe3 icon="material:thermostat"
+            Text item=G32_Probe4 icon="material:thermostat"
+        }
+    }
+}

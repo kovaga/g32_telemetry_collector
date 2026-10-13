@@ -29,7 +29,7 @@ G32 grill ──TCP:4501──► Otto Wilde cloud
 - [Running as a service](#running-as-a-service)
 - [Deploying with Puppet](#deploying-with-puppet)
 - [Output](#output)
-- [openHAB example](#openhab-example)
+- [openHAB](#openhab)
 - [Frame format](#frame-format)
 - [Troubleshooting](#troubleshooting)
 - [Limitations](#limitations)
@@ -297,21 +297,27 @@ On shutdown, and every `stats_interval` seconds if enabled, the collector logs:
 grill to the cloud port), `frames` (decoded), `offline_events`, `gaps` (missing
 TCP data in the mirror) and `malformed` (unparseable datagrams).
 
-## openHAB example
+## openHAB
 
-With the [MQTT binding](https://www.openhab.org/addons/bindings/mqtt/) and the
-JSONPath transformation installed (replace `mybroker` with your broker thing):
+`openhab/` contains ready-to-use definitions for the
+[MQTT binding](https://www.openhab.org/addons/bindings/mqtt/) (with the JSONPath
+transformation installed):
 
-```
-Thing mqtt:topic:g32 "G32 grill" (mqtt:broker:mybroker) {
-    Channels:
-        Type string : status    "Status"        [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.status" ]
-        Type number : gasLevel  "Gas level"     [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.gas.level_percent" ]
-        Type number : gasWeight "Gas remaining" [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.gas.weight_kg" ]
-        Type number : zone1     "Zone 1"        [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.zone_1" ]
-        Type string : collector "Collector"     [ stateTopic="openhab/g32/availability" ]
-}
-```
+| File | Contents |
+|---|---|
+| `openhab/g32.things` | MQTT Thing `mqtt:topic:mymosquitto:g32` with one channel per status field |
+| `openhab/g32.items` | Items in group `gG32`, with units, display patterns and semantic tags |
+
+Copy them to `$OPENHAB_CONF/things/` and `$OPENHAB_CONF/items/` and replace
+`mymosquitto` with the ID of your MQTT broker Thing.
+
+- The Thing uses its full UID, so it does not need to be nested inside the
+  broker's `Bridge` block.
+- It watches the availability topic: while the collector is not running, the
+  Thing is OFFLINE. `G32_Status` shows whether the grill itself is online.
+- `G32_LidOpen` is a Contact (OPEN/CLOSED).
+- While the grill is off, the status message carries no temperatures; the
+  temperature items then keep their last value, so check `G32_Status`.
 
 ## Frame format
 
@@ -381,5 +387,6 @@ Project files:
 | `config.example.ini` | Commented example configuration |
 | `g32_telemetry_collector.service` | systemd unit |
 | `requirements.txt` / `requirements-dev.txt` | Runtime / test dependencies |
+| `openhab/` | openHAB Thing and item definitions |
 | `puppet/` | Puppet class and config template |
 | `tests/` | pytest suite |

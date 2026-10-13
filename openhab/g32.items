@@ -1,0 +1,32 @@
+// Otto Wilde G32 grill items, linked to the Thing in g32.things.
+// Replace "mymosquitto" with the ID of your MQTT broker Thing.
+//
+// G32_LidOpen is a Contact (OPEN/CLOSED); rules or sitemaps that compared it
+// with ON/OFF need to use OPEN/CLOSED.
+
+Group                gG32               "Otto Wilde G32"                                          <fire>          ["Equipment"]
+
+String               G32_Status         "Status [%s]"                                             <network>       (gG32) ["Status"]                    { channel="mqtt:topic:mymosquitto:g32:status" }
+DateTime             G32_LastSeen       "Last telemetry [%1$td.%1$tm.%1$tY %1$tH:%1$tM:%1$tS]"    <time>          (gG32) ["Status", "Timestamp"]       { channel="mqtt:topic:mymosquitto:g32:lastseen" }
+String               G32_DeviceID       "Device ID [%s]"                                          <network>       (gG32)                               { channel="mqtt:topic:mymosquitto:g32:deviceid" }
+String               G32_Collector      "Collector [%s]"                                          <network>       (gG32) ["Status"]                    { channel="mqtt:topic:mymosquitto:g32:collector" }
+
+Number:Temperature   G32_Zone1          "Zone 1 [%.1f °C]"                                        <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:zone1" }
+Number:Temperature   G32_Zone2          "Zone 2 [%.1f °C]"                                        <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:zone2" }
+Number:Temperature   G32_Zone3          "Zone 3 [%.1f °C]"                                        <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:zone3" }
+Number:Temperature   G32_Zone4          "Zone 4 [%.1f °C]"                                        <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:zone4" }
+
+Number:Temperature   G32_Probe1         "Meat probe 1 [%.1f °C]"                                  <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:probe1" }
+Number:Temperature   G32_Probe2         "Meat probe 2 [%.1f °C]"                                  <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:probe2" }
+Number:Temperature   G32_Probe3         "Meat probe 3 [%.1f °C]"                                  <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:probe3" }
+Number:Temperature   G32_Probe4         "Meat probe 4 [%.1f °C]"                                  <temperature>   (gG32) ["Measurement", "Temperature"] { channel="mqtt:topic:mymosquitto:g32:probe4" }
+
+Number:Mass          G32_GasWeight      "Gas remaining [%.3f kg]"                                 <gas>           (gG32) ["Measurement", "Gas"]        { channel="mqtt:topic:mymosquitto:g32:gasweight" }
+Number:Mass          G32_GasCapacity    "Gas capacity [%.3f kg]"                                  <gas>           (gG32)                               { channel="mqtt:topic:mymosquitto:g32:gascapacity" }
+Number:Dimensionless G32_GasLevelRep    "Gas level (reported) [%.0f %%]"                          <batterylevel>  (gG32) ["Measurement", "Level"]      { channel="mqtt:topic:mymosquitto:g32:gaslevelrep" }
+Number:Dimensionless G32_GasLevelCalc   "Gas level (calculated) [%.2f %%]"                        <batterylevel>  (gG32) ["Measurement", "Level"]      { channel="mqtt:topic:mymosquitto:g32:gaslevelcalc" }
+DateTime             G32_TankInstalled  "Tank installed [%1$td.%1$tm.%1$tY %1$tH:%1$tM:%1$tS]"    <time>          (gG32)                               { channel="mqtt:topic:mymosquitto:g32:tankinstalled" }
+
+Contact              G32_LidOpen        "Lid [%s]"                                                <door>          (gG32) ["OpenState", "Opening"]      { channel="mqtt:topic:mymosquitto:g32:lidopen" }
+Switch               G32_LightOn        "Hood light [%s]"                                         <light>         (gG32) ["Status", "Light"]           { channel="mqtt:topic:mymosquitto:g32:lighton", autoupdate="false" }
+Number:Dimensionless G32_LightSens      "Hood light sensitivity [%.0f %%]"                        <settings>      (gG32)                               { channel="mqtt:topic:mymosquitto:g32:lightsensitivity" }

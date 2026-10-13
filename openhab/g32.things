@@ -1,0 +1,39 @@
+// Otto Wilde G32 grill, fed by g32_telemetry_collector over MQTT.
+//
+// Requires the MQTT binding and the JSONPath transformation. Replace
+// "mymosquitto" with the ID of your MQTT broker Thing. The full Thing UID makes
+// this file independent of the broker definition; the channel UIDs are the
+// same as with a Thing nested inside the Bridge block.
+//
+// The Thing goes OFFLINE while the collector itself is not running (MQTT last
+// will on the availability topic). Whether the grill is on is shown by the
+// "status" channel (online/offline).
+
+Thing mqtt:topic:mymosquitto:g32 "Otto Wilde G32" (mqtt:broker:mymosquitto) @ "Garden" [
+    availabilityTopic="openhab/g32/availability", payloadAvailable="online", payloadNotAvailable="offline"
+] {
+    Channels:
+        Type string   : status           "Grill status"           [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.status" ]
+        Type datetime : lastseen         "Last telemetry"         [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.received_at_utc" ]
+        Type string   : deviceid         "Device ID"              [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.device_id" ]
+        Type string   : collector        "Collector"              [ stateTopic="openhab/g32/availability" ]
+
+        Type number   : zone1            "Zone 1 temperature"     [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.zone_1", unit="°C" ]
+        Type number   : zone2            "Zone 2 temperature"     [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.zone_2", unit="°C" ]
+        Type number   : zone3            "Zone 3 temperature"     [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.zone_3", unit="°C" ]
+        Type number   : zone4            "Zone 4 temperature"     [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.zone_4", unit="°C" ]
+        Type number   : probe1           "Meat probe 1"           [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.probe_1", unit="°C" ]
+        Type number   : probe2           "Meat probe 2"           [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.probe_2", unit="°C" ]
+        Type number   : probe3           "Meat probe 3"           [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.probe_3", unit="°C" ]
+        Type number   : probe4           "Meat probe 4"           [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.temperatures_c.probe_4", unit="°C" ]
+
+        Type number   : gasweight        "Gas remaining"          [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.gas.weight_kg", unit="kg" ]
+        Type number   : gascapacity      "Gas capacity"           [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.gas.capacity_kg", unit="kg" ]
+        Type number   : gaslevelrep      "Gas level (reported)"   [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.gas.level_percent", unit="%" ]
+        Type number   : gaslevelcalc     "Gas level (calculated)" [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.gas.calculated_level_percent", unit="%" ]
+        Type datetime : tankinstalled    "Tank installed (probable)" [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.probable_tank_installed_utc" ]
+
+        Type contact  : lidopen          "Lid"                    [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.lid_open", on="true", off="false" ]
+        Type switch   : lighton          "Hood light"             [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.light_on", on="true", off="false" ]
+        Type number   : lightsensitivity "Hood light sensitivity" [ stateTopic="openhab/g32/status", transformationPattern="JSONPATH:$.g32.hood_light_sensitivity_percent", unit="%" ]
+}
